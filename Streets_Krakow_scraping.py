@@ -1,6 +1,7 @@
 import requests
 import geopandas as gpd
 from shapely.geometry import LineString
+import networkx as nx
 
 url = "https://overpass-api.de/api/interpreter"
 
@@ -62,6 +63,30 @@ for element in data:
             print(f"Node not found for way {element['id']}: {e}")
 
 streets_gdf = gpd.GeoDataFrame(streets, crs="EPSG:4326")
+
+# Not all streets are connected, so we need to filter out smaller components
+print("Finding connected street network...")
+
+G = nx.Graph()
+
+for idx, row in streets_gdf.iterrows():
+    coords = list(row.geometry.coords)
+    start = coords[0]
+    end = coords[-1]
+    G.add_edge(start, end, id=row.id)
+
+components = list(nx.connected_components(G))
+
+largest_component = max(components, key=len)
+
+connected_edges = set()
+for node in largest_component:
+    for neighbor in G[node]:
+        if neighbor in largest_component:
+            edge_data = G[node][neighbor]
+            connected_edges.add(edge_data['id'])
+
+streets_gdf = streets_gdf[streets_gdf['id'].isin(connected_edges)]
 
 streets_gdf.to_file("data/Streets_Krakow.shp")
 
